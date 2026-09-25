@@ -72,18 +72,19 @@ Reinicie o Claude Code apos a instalacao. Pronto.
 
 ### Distros suportadas
 
-O `setup.sh` detecta a distro por `/etc/os-release` e usa o gerenciador de pacotes certo.
+O `setup.sh` detecta a distro por `/etc/os-release` (no macOS, por `uname -s`) e usa o gerenciador de pacotes certo.
 
 | Sistema | Gerenciador | Status |
 |---|---|---|
 | Fedora 40+ | `dnf5` / `dnf` | Suportado |
 | RHEL / Rocky / Alma / CentOS Stream 9-10 | `dnf` | Suportado |
 | Ubuntu 22+ / Debian | `apt-get` | Suportado |
-| macOS 13+ | `brew` | Suportado |
+| macOS 13+ (Apple Silicon e Intel) | `brew` | Suportado |
 | Outras | — | Roda, mas so reporta dependencias faltando |
 
 Se faltar alguma dependencia (git, Node.js, tmux, pipx), o script **mostra o comando exato
-e pede confirmacao** antes de rodar `sudo`. Nada e instalado sem seu aval.
+e pede confirmacao** antes de rodar `sudo`. No macOS usa `brew`, sem `sudo`, e o Homebrew e
+obrigatorio. Nada e instalado sem seu aval.
 
 **Flags uteis:**
 ```bash
@@ -96,6 +97,13 @@ e pede confirmacao** antes de rodar `sudo`. Nada e instalado sem seu aval.
 > entao `pip install` falha. O script instala o SuperClaude via **pipx** — com fallback
 > automatico para um venv em `~/.claude/venv-superclaude`.
 > Em RHEL/Rocky/Alma o `pipx` vem do EPEL: `sudo dnf install -y epel-release`.
+
+> **macOS:** os scripts rodam no bash 3.2 nativo e exigem o [Homebrew](https://brew.sh) — sem ele,
+> `setup.sh` e `update.sh` param com erro antes de instalar qualquer coisa. Sem as Xcode Command Line
+> Tools, `/usr/bin/git` e `/usr/bin/python3` sao stubs que so abrem o instalador grafico: o script os
+> trata como ausentes e sugere `xcode-select --install`.
+> No Apple Silicon o Homebrew fica em `/opt/homebrew`, fora do `PATH` padrao: os scripts carregam o
+> `brew shellenv` na sessao — persista com `eval "$(/opt/homebrew/bin/brew shellenv)"` no `~/.zprofile`.
 
 ---
 

@@ -1,0 +1,2 @@
+# Scripts shell sempre com LF: com CRLF o macOS/Linux falham com "bad interpreter: /bin/bash^M".
+*.sh text eol=lf

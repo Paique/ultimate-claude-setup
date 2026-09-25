@@ -1,6 +1,6 @@
 #!/bin/bash
 # Atualiza todas as ferramentas do Claude Code Setup
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 
 WARNINGS=()
 warn() { echo -e "${YELLOW}  $1${NC}"; WARNINGS+=("$1"); }
@@ -34,7 +34,35 @@ detect_platform() {
     esac
 }
 
+# No Apple Silicon o Homebrew fica em /opt/homebrew, fora do PATH padrao (mesma logica do setup.sh)
+load_brew_env() {
+    command -v brew >/dev/null 2>&1 && return 0
+    local brew_bin
+    for brew_bin in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+        [ -x "$brew_bin" ] || continue
+        eval "$("$brew_bin" shellenv)"
+        warn "Homebrew fora do PATH. Adicione ao ~/.zprofile: eval \"\$($brew_bin shellenv)\""
+        return 0
+    done
+    return 1
+}
+
+# Comando de instalacao sugerido. Homebrew nao usa sudo nem -y.
+install_hint() {
+    if [ "$PKG_FAMILY" = "brew" ]; then
+        echo "brew install $1"
+        return 0
+    fi
+    echo "sudo $PKG_MGR install -y $1"
+}
+
 detect_platform
+# Antes do ~/.local/bin: o 'brew shellenv' reordena o PATH (path_helper).
+if [ "$PKG_FAMILY" = "brew" ] && ! load_brew_env; then
+    echo -e "${RED}ERRO: Homebrew nao encontrado. No macOS o update depende dele.${NC}"
+    echo -e "${RED}  Instale em https://brew.sh e rode ./setup.sh.${NC}"
+    exit 1
+fi
 
 case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
@@ -59,7 +87,7 @@ py_cli_upgrade() {
         pipx install "$pkg" && return 0
         return 1
     fi
-    warn "pipx nao encontrado. Instale: sudo $PKG_MGR install -y pipx  (ou rode ./setup.sh)"
+    warn "pipx nao encontrado. Instale: $(install_hint pipx)  (ou rode ./setup.sh)"
     return 1
 }
 
@@ -105,7 +133,7 @@ if command -v tmux >/dev/null 2>&1; then
         warn "claude-squad falhou"
     fi
 else
-    warn "tmux ausente — claude-squad pulado. Instale: sudo $PKG_MGR install -y tmux"
+    warn "tmux ausente — claude-squad pulado. Instale: $(install_hint tmux)"
 fi
 
 if [ ${#WARNINGS[@]} -gt 0 ]; then
