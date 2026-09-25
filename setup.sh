@@ -1,6 +1,7 @@
 #!/bin/bash
 # Ultimate Claude Code Setup - Linux/Mac
 # Executa como: chmod +x setup.sh && ./setup.sh
+# Compativel com o bash 3.2 nativo do macOS: nada de bash 4+ (declare -A, ${var,,}, mapfile).
 #
 # Flags:
 #   -y, --yes       Instala dependencias faltando sem perguntar
@@ -50,6 +51,8 @@ run() {
 detect_platform() {
     OS_NAME="desconhecido"; OS_ID=""; OS_VERSION=""
     PKG_FAMILY="unknown"; PKG_MGR=""
+    # Vira 0 no macOS sem Xcode Command Line Tools (ver macos_preflight).
+    MACOS_CLT=1
 
     if [ "$(uname -s)" = "Darwin" ]; then
         OS_NAME="macOS"; OS_ID="macos"; OS_VERSION="$(sw_vers -productVersion 2>/dev/null)"
@@ -105,13 +108,19 @@ pkg_install_cmd() {
     esac
 }
 
+# Sem as Xcode Command Line Tools, /usr/bin/git e /usr/bin/python3 do macOS sao stubs:
+# estao no PATH, mas so abrem o instalador grafico das CLT em vez de rodar.
+is_macos_shim() {
+    [ "$MACOS_CLT" = "0" ] && [ "$(command -v "$1")" = "/usr/bin/$1" ]
+}
+
 # ensure_pkg <binario> <pkg-rhel> <pkg-debian> <pkg-brew>
 # Retorna 0 se o binario esta disponivel ao final, 1 caso contrario.
 ensure_pkg() {
     local bin="$1"; shift
     local pkg; pkg="$(pkg_name "$@")"
 
-    command -v "$bin" >/dev/null 2>&1 && return 0
+    command -v "$bin" >/dev/null 2>&1 && ! is_macos_shim "$bin" && return 0
 
     if [ "$PKG_FAMILY" = "unknown" ]; then
         warn "'$bin' nao encontrado e a distro nao foi reconhecida. Instale manualmente."
@@ -156,19 +165,55 @@ ensure_pkg() {
     return 0
 }
 
+# No Apple Silicon o Homebrew fica em /opt/homebrew, que so entra no PATH depois do
+# 'brew shellenv' no ~/.zprofile. Se o binario existir fora do PATH, carrega nesta sessao.
+load_brew_env() {
+    command -v brew >/dev/null 2>&1 && return 0
+    local brew_bin
+    for brew_bin in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+        [ -x "$brew_bin" ] || continue
+        eval "$("$brew_bin" shellenv)"
+        warn "Homebrew fora do PATH. Adicione ao ~/.zprofile: eval \"\$($brew_bin shellenv)\""
+        return 0
+    done
+    return 1
+}
+
+# macOS: o Homebrew e obrigatorio (e o gerenciador da familia 'brew'); sem ele o setup para
+# antes de instalar qualquer coisa. Tambem checa as Xcode Command Line Tools.
+macos_preflight() {
+    if ! load_brew_env; then
+        echo -e "${RED}ERRO: Homebrew nao encontrado. No macOS o setup depende dele.${NC}"
+        echo -e "${RED}  Instale em https://brew.sh e rode ./setup.sh de novo.${NC}"
+        exit 1
+    fi
+
+    [ "$OS_ID" = "macos" ] || return 0
+    local clt_dir
+    clt_dir="$(xcode-select -p 2>/dev/null)" && [ -d "$clt_dir" ] && return 0
+    MACOS_CLT=0
+    warn "Xcode Command Line Tools ausentes: git e python3 do sistema nao funcionam sem elas. Rode: xcode-select --install"
+}
+
 # Garante que ~/.local/bin esta no PATH desta sessao.
 ensure_local_bin_path() {
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) return 0 ;;
     esac
     export PATH="$HOME/.local/bin:$PATH"
+    # No macOS o shell padrao e o zsh, e o bash de login le ~/.bash_profile, nao o ~/.bashrc.
+    if [ "$OS_ID" = "macos" ]; then
+        warn "Adicione ao seu ~/.zshrc (ou ~/.bash_profile, se usa bash): export PATH=\"\$HOME/.local/bin:\$PATH\""
+        return 0
+    fi
     warn "Adicione ao seu ~/.bashrc ou ~/.zshrc: export PATH=\"\$HOME/.local/bin:\$PATH\""
 }
 
 # Escolhe um python3 >= 3.10. Ecoa o binario ou string vazia.
 find_python() {
     local candidate
-    for candidate in python3 python3.13 python3.12 python3.11 python3.10; do
+    for candidate in python3 python3.14 python3.13 python3.12 python3.11 python3.10; do
+        is_macos_shim "$candidate" && continue
         if command -v "$candidate" >/dev/null 2>&1 &&
            "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
             echo "$candidate"; return 0
@@ -203,6 +248,10 @@ py_cli_install() {
 
     local py; py="$(find_python)"
     if [ -z "$py" ]; then
+        if [ "$PKG_FAMILY" = "brew" ]; then
+            warn "Nenhum python3 >= 3.10 encontrado. Instale: brew install python"
+            return 1
+        fi
         warn "Nenhum python3 >= 3.10 encontrado. Em RHEL 9: sudo $PKG_MGR install -y python3.12"
         return 1
     fi
@@ -235,10 +284,14 @@ if [ "$PKG_FAMILY" = "unknown" ]; then
     warn "Distro nao reconhecida — dependencias faltando serao apenas reportadas."
 fi
 
-ensure_local_bin_path
-
 # Pre-requisitos
 echo -e "${YELLOW}[1/11] Verificando pre-requisitos...${NC}"
+
+# Antes do ensure_local_bin_path: o 'brew shellenv' reordena o PATH (path_helper).
+if [ "$PKG_FAMILY" = "brew" ]; then
+    macos_preflight
+fi
+ensure_local_bin_path
 
 ensure_pkg git git git git || true
 
@@ -251,9 +304,13 @@ fi
 echo -e "  Node: $(node --version)"
 echo -e "  npm:  $(npm --version)"
 
-# Node instalado pelo dnf/apt usa prefix /usr — 'npm install -g' falha com EACCES.
+# Node do dnf/apt (prefix /usr) ou do .pkg oficial do macOS (prefix /usr/local) faz
+# 'npm install -g' falhar com EACCES. Checa lib/node_modules quando existe: num Mac Intel
+# com Homebrew, /usr/local/lib e do usuario, mas o node_modules do .pkg continua do root.
 NPM_PREFIX="$(npm config get prefix 2>/dev/null || echo "")"
-if [ -n "$NPM_PREFIX" ] && [ ! -w "$NPM_PREFIX/lib" ] 2>/dev/null; then
+NPM_GLOBAL_DIR="$NPM_PREFIX/lib/node_modules"
+[ -d "$NPM_GLOBAL_DIR" ] || NPM_GLOBAL_DIR="$NPM_PREFIX/lib"
+if [ -n "$NPM_PREFIX" ] && [ ! -w "$NPM_GLOBAL_DIR" ] 2>/dev/null; then
     warn "npm prefix '$NPM_PREFIX' nao e gravavel. Trocando para \$HOME/.local"
     run npm config set prefix "$HOME/.local"
     ensure_local_bin_path

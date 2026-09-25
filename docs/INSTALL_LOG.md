@@ -13,7 +13,7 @@ Util para entender o que cada ferramenta faz e como foi integrada.
 | Ubuntu 22+ / Debian | `apt-get` | Testado |
 | Fedora 40+ | `dnf5` / `dnf` | Testado (F43) |
 | RHEL / Rocky / Alma / CentOS Stream 9-10 | `dnf` | Suportado |
-| macOS 13+ | `brew` | Testado |
+| macOS 13+ (Apple Silicon e Intel) | `brew` | Testado |
 | WSL2 (Windows) | `apt-get` | Necessario para claude-squad |
 
 RHEL 8 **nao** e suportado: o `python3` padrao e 3.6 e exigiria module streams.
@@ -26,13 +26,13 @@ RHEL 8 **nao** e suportado: o `python3` padrao e 3.6 e exigiria module streams.
 
 ### Deteccao de plataforma
 
-O `setup.sh` le `/etc/os-release` e classifica a distro em uma familia por `ID` e `ID_LIKE`:
+O `setup.sh` le `/etc/os-release` (no macOS, `uname -s`) e classifica a distro em uma familia por `ID` e `ID_LIKE`:
 
 | Familia | Detectada por | Gerenciador |
 |---|---|---|
 | `rhel` | `ID`/`ID_LIKE` contem `fedora`, `rhel` ou `centos` | `dnf5` > `dnf` > `yum` |
 | `debian` | `ID`/`ID_LIKE` contem `debian` ou `ubuntu` | `apt-get` |
-| `brew` | `uname -s` = `Darwin` | `brew` |
+| `brew` | `uname -s` = `Darwin` | `brew` (carrega `brew shellenv` se estiver fora do `PATH`) |
 | `unknown` | nenhum dos acima | nenhum — so reporta |
 
 ```bash
@@ -45,6 +45,8 @@ UCS_FORCE_FAMILY=debian ./setup.sh --dry-run   # simula outra familia
 
 Dependencias faltando (git, Node.js, npm, tmux, pipx) sao instaladas apenas apos
 confirmacao. Sem `sudo` ou em familia `unknown`, o script imprime o comando e segue.
+No macOS o Homebrew e obrigatorio: sem ele, `setup.sh` e `update.sh` param com erro antes de
+instalar qualquer coisa (instale em https://brew.sh).
 
 ---
 
@@ -172,6 +174,9 @@ distros. Em RHEL/Rocky/Alma o pacote `pipx` vem do EPEL:
 sudo dnf install -y epel-release
 sudo dnf install -y pipx
 ```
+
+No macOS o `pipx` vem do Homebrew (`brew install pipx`); o `python3` das Xcode Command Line Tools
+costuma ser 3.9, antigo demais (o SuperClaude exige 3.10+).
 
 **Fallback automatico:** se o `pipx` nao estiver disponivel, o `setup.sh` cria
 `~/.claude/venv-superclaude` com `python3 -m venv` e faz symlink do binario em
@@ -310,14 +315,29 @@ curl -fsSL https://raw.githubusercontent.com/smtg-ai/claude-squad/main/install.s
 - **`npm install -g` com Node do gerenciador de pacotes** — o prefix e `/usr`, que nao e gravavel
   pelo usuario, e a instalacao falha com `EACCES`. O `setup.sh` detecta isso e roda
   `npm config set prefix "$HOME/.local"`. Node via nvm/fnm ja usa prefix no `$HOME` e nao e alterado.
+  No macOS o mesmo vale para o Node do `.pkg` oficial (prefix `/usr/local`). A checagem olha
+  `lib/node_modules` quando existe: num Mac Intel com Homebrew, `/usr/local/lib` e do usuario, mas o
+  `node_modules` do `.pkg` continua do root. O Node do Homebrew nao e alterado.
 - **`~/.local/bin` precisa estar no `PATH`** — destino de `pipx`, `claude-squad` (`cs`) e do npm
   reconfigurado. O script exporta na sessao atual e avisa para persistir no `.bashrc`/`.zshrc`.
+  No macOS o aviso cita `~/.zshrc` (zsh e o padrao) ou `~/.bash_profile` (bash de login nao le `~/.bashrc`).
 - **CLI `claude` ausente** — o script nao aborta mais; imprime os `claude mcp add` para rodar depois.
 - **`~/.claude/CLAUDE.md` e sobrescrito** pelo template deste repo. Se ja existir, os scripts
   criam `CLAUDE.md.bak.AAAAMMDD-HHMMSS` antes de escrever. Reaplique suas regras customizadas.
 - **`setup.ps1`: backticks no here-string** — em `@"..."@` o PowerShell trata `` ` `` como escape
   (`` `n `` virava quebra de linha no meio de `` `npx repomix` ``). Os backticks de markdown agora
   sao duplicados no script para produzir um backtick literal no arquivo final.
+- **Homebrew fora do `PATH` no Apple Silicon** — `/opt/homebrew` so entra no `PATH` via `brew shellenv`.
+  Se o `brew` existir em `/opt/homebrew/bin` ou `/usr/local/bin`, `setup.sh` e `update.sh` carregam o
+  `brew shellenv` na sessao e avisam para persistir `eval "$(/opt/homebrew/bin/brew shellenv)"` no `~/.zprofile`.
+- **Xcode Command Line Tools (CLT)** — checadas com `xcode-select -p`. Sem elas, `/usr/bin/git` e
+  `/usr/bin/python3` sao stubs que so abrem o instalador grafico; o script os trata como ausentes
+  (instala via `brew`) e avisa para rodar `xcode-select --install`.
+- **bash 3.2 no macOS** — `setup.sh` e `update.sh` sao compativeis com o `/bin/bash` 3.2 nativo do
+  macOS; nenhum recurso de bash 4+ e usado.
+- **`.gitattributes` forca LF nos `*.sh`** — com CRLF, macOS e Linux falham com
+  `bad interpreter: /bin/bash^M`. `setup.sh` e `update.sh` tambem sao versionados como executaveis
+  (modo `100755`), entao `./setup.sh` funciona logo apos o clone; o `chmod +x` continua inofensivo.
 
 ---
 

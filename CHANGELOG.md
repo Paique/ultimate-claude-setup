@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased]
+
+### Adicionado
+- Checagem das Xcode Command Line Tools via `xcode-select -p`, com aviso para rodar `xcode-select --install`
+- `.gitattributes` forcando LF nos `*.sh`; `setup.sh` e `update.sh` versionados como executaveis
+  (`100755`), entao `./setup.sh` funciona logo apos o clone
+
+### Corrigido
+- **Mac sem Homebrew seguia com erros enganosos** — cada `brew install` falhava com `command not found`
+  e o setup acabava em "Node.js nao encontrado". Agora `setup.sh` e `update.sh` param logo no inicio
+  com erro dizendo que o Homebrew e obrigatorio (https://brew.sh)
+- **Setup abortava no Apple Silicon com o Homebrew fora do `PATH`** — `/opt/homebrew` so entra no
+  `PATH` via `brew shellenv`; o `brew install node` falhava com `command not found` e o script saia
+  com "Node.js nao encontrado". Agora `setup.sh` e `update.sh` carregam o `brew shellenv` na sessao
+  e avisam para persistir no `~/.zprofile`
+- **`npm install -g` com `EACCES` num Mac Intel com Homebrew e Node do `.pkg` oficial** — a checagem
+  olhava `/usr/local/lib` (do usuario, via Homebrew) e ignorava o `node_modules` do root; agora olha
+  `lib/node_modules` quando existe
+- **Stubs das Xcode Command Line Tools (CLT) contavam como instalados** — sem as CLT, `/usr/bin/git`
+  e `/usr/bin/python3` so abriam o instalador grafico, que aparecia no meio da execucao; agora contam
+  como ausentes e sao instalados via `brew`
+- `update.sh` sugeria `sudo brew install -y pipx` e `sudo brew install -y tmux` no macOS; agora as
+  dicas sao `brew install <pacote>` — o Homebrew nunca roda com `sudo`
+- O aviso de Python 3.10+ ausente dizia "Em RHEL 9: sudo ... python3.12" em qualquer plataforma;
+  no macOS agora sugere `brew install python`
+- A dica de `PATH` para `~/.local/bin` citava o `~/.bashrc`, que o bash de login do macOS nao le;
+  no macOS agora aponta para o `~/.zshrc` (shell padrao) ou o `~/.bash_profile`
+- `python3.14` faltava na lista de interpretadores candidatos do fallback em venv
+
+---
+
 ## [1.3.0] - 2026-08-07
 
 ### Adicionado
