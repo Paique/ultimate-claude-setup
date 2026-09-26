@@ -50,7 +50,7 @@ Configurar o Claude Code com todas as melhores ferramentas da comunidade leva ho
 **Pre-requisitos:** [Node.js 18+](https://nodejs.org) · [Python 3.10+](https://python.org) · [git](https://git-scm.com) · [Claude Code CLI](https://claude.ai/code)
 
 ```bash
-git clone https://github.com/FalvesDev/ultimate-claude-setup.git
+git clone https://github.com/Paique/ultimate-claude-setup.git
 cd ultimate-claude-setup
 ```
 
